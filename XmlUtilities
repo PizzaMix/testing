@@ -1,0 +1,799 @@
+@Slf4j
+public class XmlUtilities
+{
+    public static void writeXml(Document doc,
+                                OutputStream output)  {
+        writeXml(doc, output, null);
+    }
+
+    public static String convertDocumentToString(Document doc)
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream(1024);
+        writeXml(doc, baos);
+
+        return baos.toString();
+    }
+
+    public static void writeXml(Document doc,
+                                OutputStream output
+            , InputStream xsltTransformer)
+    {
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        transformerFactory.setAttribute("indent-number", 2);
+
+        Transformer transformer = null;
+        try {
+            if (xsltTransformer != null)
+                transformer = transformerFactory.newTransformer(new StreamSource(xsltTransformer));
+            else
+                transformer = transformerFactory.newTransformer();
+            // pretty print
+            transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+            transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+            transformer.setOutputProperty(OutputKeys.STANDALONE, "yes");
+
+            DOMSource source = new DOMSource(doc);
+            StreamResult result = new StreamResult(output);
+
+            transformer.transform(source, result);
+        }
+        catch(TransformerException ex) {
+            log.error("Unable to create Transformer "+ex.getMessage(), ex);
+            return;
+        }
+    }
+    public static void writeXml(Document doc,
+                                Writer output) throws TransformerException {
+        writeXml(doc, output, null);
+    }
+
+    public static void writeXmlPretty(Document doc,
+                                      Writer output) throws TransformerException {
+        writeXml(doc, output, XmlUtilities.class.getResourceAsStream("/connfiguration/xslt/remove-newlines.xslt"));
+    }
+
+    public static void writeXml(Document doc,
+                                Writer output
+            , InputStream xsltTransformer)
+            throws TransformerException {
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+
+        Transformer transformer = null;
+        if (xsltTransformer != null)
+            transformer = transformerFactory.newTransformer(new StreamSource(xsltTransformer));
+        else
+            transformer = transformerFactory.newTransformer();
+
+        // pretty print
+        //transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty(OutputKeys.STANDALONE, "yes");
+
+        DOMSource source = new DOMSource(doc);
+        StreamResult result = new StreamResult(output);
+
+        transformer.transform(source, result);
+    }
+
+    public static Document loadDocumentFromUri(URI uri) {
+        return loadDocumentFromUri(uri, null);
+    }
+
+    public static Document loadDocumentFromUri(URI uri, ClassLoader classLoader)
+    {
+        try {
+            File fileDoc = new File(uri);
+            if (!fileDoc.exists()) {
+             throw new RuntimeException(fileDoc.getAbsolutePath() + " does not exist.");
+            }
+
+            InputStream is = new BufferedInputStream(new FileInputStream(fileDoc), 1024*1024);
+            Document ret = loadDocumentFromInputStream(is, classLoader, uri.toString(), false);
+
+            is.close();
+            is = null;
+
+            return ret;
+        }
+        catch (IOException ex)
+        {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static Document loadDocumentFromString(String xml, ClassLoader classLoader)
+    {
+        try {
+            InputStream is = new BufferedInputStream(new ByteArrayInputStream(xml.getBytes()), 1024*1024);
+            Document ret = loadDocumentFromInputStream(is, classLoader);
+
+            is.close();
+            is = null;
+
+            return ret;
+        }
+        catch (IOException ex)
+        {
+            throw new RuntimeException(ex);
+        }
+    }
+    public static Document loadDocumentFromInputStream(InputStream inputStream)
+    {
+        return loadDocumentFromInputStream(inputStream, null, null, true);
+    }
+
+    public static Document loadDocumentFromInputStream(InputStream inputStream, ClassLoader classLoader)
+    {
+        return loadDocumentFromInputStream(inputStream, classLoader, null, true);
+    }
+
+    public static Document loadDocumentFromInputStream(InputStream inputStream, ClassLoader classLoader, String relativeResource, boolean closeInputStream)
+    {
+        if (inputStream == null) return null;
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setXIncludeAware(true);
+            factory.setIgnoringComments(true);
+            factory.setCoalescing(true);
+            factory.setIgnoringElementContentWhitespace(true);
+            factory.setValidating(false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            DocumentBuilder builder = null;
+            builder = factory.newDocumentBuilder();
+            if (classLoader != null) builder.setEntityResolver(new ClassLoaderEntityResolver(classLoader, relativeResource));
+            Document doc = builder.parse(inputStream);
+            doc.getDocumentElement().normalize();
+
+            if (closeInputStream) {
+                inputStream.close();
+                inputStream = null;
+            }
+
+            //XmlUtilities.writeXmlPretty(doc, System.out);
+
+            return doc;
+        } catch (ParserConfigurationException | SAXException | IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static Element getFirstElement(Node parent) {
+        Node ret = parent.getFirstChild();
+        while (ret != null && (!(ret instanceof Element))) {
+            ret = ret.getNextSibling();
+        }
+        return (Element) ret;
+    }
+
+    public static Element getNextElement(Element el) {
+        Node nd = el.getNextSibling();
+        while (nd != null) {
+            if (nd.getNodeType() == Node.ELEMENT_NODE) {
+                return (Element) nd;
+            }
+            nd = nd.getNextSibling();
+        }
+        return null;
+    }
+
+    public static List<Element> getChildElements(Node parent, String tagName) {
+        List<Element> ret = new ArrayList<>();
+
+        Element first = getFirstElement(parent);
+        if (first != null) {
+            if (first.getTagName().equals(tagName)) ret.add(first);
+            if (tagName == null) ret.add(first);
+            Element next = getNextElement(first);
+            while (next != null) {
+                if (next.getTagName().equals(tagName)) ret.add(next);
+                if (tagName == null) ret.add(next);
+                next = getNextElement(next);
+            }
+        }
+        return ret;
+    }
+
+    public static List<Element> getChildElements(Node parent) {
+        return getChildElements(parent, null);
+    }
+
+    public static List<Attr> getAttributes(Node node) {
+        List<Attr> ret = new ArrayList<>();
+        NamedNodeMap attributesMap = node.getAttributes();
+        if (attributesMap == null) return ret;
+        for (int i = 0; i < attributesMap.getLength(); i++) {
+            Attr attr = (Attr) attributesMap.item(i);
+            ret.add(attr);
+        }
+
+        Collections.sort(ret, Comparator.comparing(Attr::getName));
+
+        return ret;
+    }
+
+    public static String getNodeTypeString(Node node) {
+
+        switch (node.getNodeType()) {
+            case Node.PROCESSING_INSTRUCTION_NODE:
+                return "processing-instruction";
+            case Node.ELEMENT_NODE:
+                return "element";
+            case Node.TEXT_NODE:
+                return "text";
+            case Node.CDATA_SECTION_NODE:
+                return "cdata";
+            case Node.ATTRIBUTE_NODE:
+                return "asttribute";
+            case Node.COMMENT_NODE:
+                return "comment";
+            case Node.DOCUMENT_FRAGMENT_NODE:
+                return "document-fragment-node";
+            case Node.DOCUMENT_NODE:
+                return "document-node";
+            case Node.DOCUMENT_TYPE_NODE:
+                return "document-type-node";
+            default:
+                return "unknown";
+        }
+    }
+    public static Class<?> getNodeTypeW3CInterface(Node node)
+    {
+        if (node == null) new  RuntimeException("Node can not be null.");
+
+        switch (node.getNodeType()) {
+            case Node.PROCESSING_INSTRUCTION_NODE:
+                return ProcessingInstruction.class;
+            case Node.ELEMENT_NODE:
+                return Element.class;
+            case Node.TEXT_NODE:
+                return Text.class;
+            case Node.CDATA_SECTION_NODE:
+                return CDATASection.class;
+            case Node.ATTRIBUTE_NODE:
+                return Attr.class;
+            case Node.COMMENT_NODE:
+                return Comment.class;
+            case Node.DOCUMENT_FRAGMENT_NODE:
+                return DocumentFragment.class;
+            case Node.DOCUMENT_NODE:
+                return Document.class;
+            case Node.DOCUMENT_TYPE_NODE:
+                return DocumentType.class;
+            default:
+                throw new  RuntimeException("Unknown node type "+ node.getClass().getSimpleName());
+        }
+    }
+
+    private static boolean isDebugEnabled() {
+        return false;
+    }
+
+    public static DataMapper addAttributes(DataMapper ret, Node node, String prefix)
+    {
+       if (!(node instanceof Element)) return ret;
+
+        NamedNodeMap attributesMap = node.getAttributes();
+        if (attributesMap == null) return ret;
+        for (int i = 0; i < attributesMap.getLength(); i++) {
+            Attr attr = (Attr) attributesMap.item(i);
+            String colName = node.getNodeName()+"."+attr.getName();
+            if(isDebugEnabled()) colName = prefix + "." + node.getNodeName()+"."+attr.getName();
+
+            ret.addColumn(colName, Attr.class);
+            ret.set(colName, attr);
+        }
+
+        return ret;
+    }
+
+    public static DataMapper convertToRow(NameMapper nameMapper
+            , Node node
+            , DataMapper parentRow
+    )
+    {
+        DataMapper row = new DataMapper(nameMapper);
+        row.setXmlNode(node);
+        row.setParentRow(parentRow);
+
+        addAttributes(row, node, "3");
+        addSimpleTag(row, node, true, "3");
+
+        addChildTags(row, node);
+
+        //addElementsWithChildrenTags(nameMapperMap, row, node);
+
+        return row;
+    }
+
+    public static DataMapperList convertToList(Document doc, String xpathElementExpression) {
+        return convertToList(doc, xpathElementExpression, null);
+    }
+
+    public static DataMapperList convertToList(String xmlDoc, String xpathElementExpression, String listName, ClassLoader classLoader)
+    {
+        Document doc = XmlUtilities.loadDocumentFromResource(xmlDoc, classLoader);
+        return convertToList(doc, xpathElementExpression, listName);
+    }
+
+    public static SimpleMap loadAsSimpleMap(String xmlDoc, ClassLoader classLoader)
+    {
+        Document doc = XmlUtilities.loadDocumentFromResource(xmlDoc, classLoader);
+        // writeXml(doc, System.out);
+        return convertToSimpleMap(doc);
+    }
+
+    public static SimpleMap loadAsSimpleMap(String xmlDoc, boolean elementNameSubMap, ClassLoader classLoader)
+    {
+        Document doc = XmlUtilities.loadDocumentFromResource(xmlDoc, classLoader);
+        // writeXml(doc, System.out);
+        return convertToSimpleMap(doc.getDocumentElement(), false, elementNameSubMap);
+    }
+
+    public static SimpleMap convertToSimpleMap(Document doc, boolean renameJsUncompatible)
+    {
+        return convertToSimpleMap(doc.getDocumentElement(),  renameJsUncompatible, true);
+    }
+
+    public static SimpleMap convertToSimpleMap(Document doc)
+    {
+        return convertToSimpleMap(doc.getDocumentElement(),  false, true);
+    }
+
+    public static SimpleMap convertToSimpleMap(Element elem, boolean renameJsUncompatible, boolean elementNameSubMap)
+    {
+        SimpleMap contentMap = new SimpleMap();
+        SimpleMap ret = new SimpleMap();
+
+        contentMap.setHiddenKeys(List.of("_a", "_e", "_t", "_tagName", "_elements"));
+
+        // add attributes into sub map "attrs"
+        SimpleMap attrs = addAttributesSm(elem, renameJsUncompatible);
+        contentMap.put("_a", attrs);  // attrs -> Map<String(name), Object(value)>
+
+        contentMap.put("_t", addTextSm(elem, renameJsUncompatible));  // attrs -> Map<String(name), Object(value)>
+
+        // add child into sub map "child"
+        SimpleMap elements = addChildElementsSm(elem, renameJsUncompatible, contentMap);
+        contentMap.put("_e", elements);  // attrs -> Map<String(name), Object(value)>
+
+        String key = (renameJsUncompatible ? StringUtilities.renameJsUncompatible(elem.getTagName()) : elem.getTagName() );
+        contentMap.put("_tagName", elem.getTagName());
+        ret.put(key, contentMap);
+
+        return (elementNameSubMap ? ret : contentMap);
+    }
+
+    public static SimpleMap addChildElementsSm(Element elem, boolean renameJsUncomp, SimpleMap parentMap)
+    {
+        SimpleMap ret = new SimpleMap();
+
+        List<Element> childElements = getChildElements(elem);
+
+        SimpleMapList children = new SimpleMapList();
+
+        for (Element tag : childElements) {
+            String key = (renameJsUncomp ? StringUtilities.renameJsUncompatible(tag.getTagName()) : tag.getTagName());
+             SimpleMap childMap = new SimpleMap();
+            childMap.put("_tagName", tag.getTagName());
+
+            childMap.setHiddenKeys(List.of("_a", "_e", "_t", "_tagName", "_elements"));
+
+            SimpleMap attrs = addAttributesSm(tag, renameJsUncomp);
+            childMap.put("_a", attrs);  // attrs -> Map<String(name), Object(value)>
+
+            childMap.put("_t", addTextSm(tag, renameJsUncomp));  // _text -> Map<String(name), Object(value)>
+
+            SimpleMap elems = addChildElementsSm(tag, renameJsUncomp, childMap);
+            if (BooleanUtilities.isTrueOrDefault(attrs.get_string("_sm-ignore"), false))
+            {
+                // take _e element from elems and add it to tag
+                SimpleMapList elements = (SimpleMapList)elems.get_as_list("_elements");
+                //childMap.put("_e", elems);  // _child -> Map<String(name), Object(value)>
+                for(SimpleMap map : elements) {
+                    String eTag = map.get_string("_tagName");
+                    SimpleMapList list = (SimpleMapList) ret.getOrDefault(eTag, new SimpleMapList());
+                    list.add(map);
+                    ret.put(eTag, list);
+                    children.add(map);
+                }
+            }
+            else {
+                childMap.put("_e", elems);  // _child -> Map<String(name), Object(value)>
+                children.add(childMap);
+                SimpleMapList valueList = (SimpleMapList)ret.get_as_list(key);
+                if (valueList == null) valueList = new SimpleMapList();
+                valueList.add(childMap);
+
+                ret.put(key, valueList);
+            }
+        }
+
+        if (children.size() > 0) ret.put("_elements", children);
+        return ret;
+    }
+
+    public static SimpleMap addTextSm(Element tag, boolean renameJsUncomp)
+    {
+        SimpleMap ret = new SimpleMap();
+
+        List<String> str = getAllTextNodes(tag);
+        str = str.stream()
+                .filter(s -> s != null && s.trim().length() > 0)
+                .filter(s -> StringUtilities.trimWhitespace(s).length() > 0)
+                .collect(Collectors.toList());
+
+        if (str.size() > 0) {
+            String colName = (renameJsUncomp ? StringUtilities.renameJsUncompatible(tag.getNodeName()) : tag.getNodeName() );
+            String txt = str.stream().collect(Collectors.joining(""));
+//            ret.put(colName, txt);
+            ret.put("_text", txt.trim());
+        }
+
+        return ret;
+    }
+
+
+    public static SimpleMap addAttributesSm(Element elem, boolean renameJsUncomp)
+    {
+        SimpleMap ret = new SimpleMap();
+
+        NamedNodeMap attributesMap = elem.getAttributes();
+        if (attributesMap == null) return ret;
+        for (int i = 0; i < attributesMap.getLength(); i++) {
+            Attr attr = (Attr) attributesMap.item(i);
+            String colName = (renameJsUncomp ? StringUtilities.renameJsUncompatible(attr.getName()) : attr.getName() );
+
+            if (ret.containsKey(colName, false))
+            {
+                Object obj = ret.get_direct(colName);
+                if (obj != null) {
+                    if (obj instanceof List) {
+                        ((List)obj).add(attr.getValue());
+                        ret.put(colName, ((List)obj));
+                    }
+                    else {
+                        List vals = new ArrayList();
+                        vals.add(obj);
+                        vals.add(attr.getValue());
+                        ret.put(colName, vals);
+                    }
+                }
+            }
+            else {
+                //List<String> list = new ArrayList<>();
+                //list.add(attr.getValue());
+                ret.put(colName, attr.getValue());
+            }
+        }
+        return ret;
+    }
+
+    public static SimpleMapList convertToListSm(String xmlDoc, String xpathElementExpression, ClassLoader classLoader)
+    {
+        Document doc = XmlUtilities.loadDocumentFromResource(xmlDoc, classLoader);
+        return convertToListSm(doc, xpathElementExpression, false, true );
+    }
+
+    public static SimpleMapList convertToListSm(String xmlDoc, String xpathElementExpression, ClassLoader classLoader, boolean elementWithSubMap)
+    {
+        Document doc = XmlUtilities.loadDocumentFromResource(xmlDoc, classLoader);
+        return convertToListSm(doc, xpathElementExpression, false, elementWithSubMap );
+    }
+
+    public static SimpleMapList convertToListSm(Document doc, String xpathElementExpression)
+    {
+        return convertToListSm(doc, xpathElementExpression, false, true );
+    }
+    public static SimpleMapList convertToListSm(Document doc, String xpathElementExpression, boolean renameJsUncompatible, boolean elementWithSubMap)
+    {
+
+        XPathFactory xpathfactory = XPathFactory.newInstance();
+        XPath xpath = xpathfactory.newXPath();
+
+        SimpleMapList ret = new SimpleMapList();
+        try
+        {
+            NodeList nodeList = (NodeList) xpath.compile(xpathElementExpression).evaluate(
+                    doc, XPathConstants.NODESET);
+
+            for(int x = 0; x < nodeList.getLength(); x++)
+            {
+                Node matchedNode = nodeList.item(x);
+                if (matchedNode instanceof Element)
+                {
+                    SimpleMap row = convertToSimpleMap((Element)matchedNode, renameJsUncompatible, elementWithSubMap);
+                    ret.add(row);
+                }
+            }
+
+        } catch (XPathExpressionException e) {
+            throw new RuntimeException(e);
+        }
+
+        return ret;
+    }
+
+    public static DataMapperList convertToList(Document doc, String xpathElementExpression, String listName)
+    {
+        XPathFactory xpathfactory = XPathFactory.newInstance();
+        XPath xpath = xpathfactory.newXPath();
+
+        DataMapperList ret = new DataMapperList();
+        if (listName == null) ret.setListName(doc.getDocumentElement().getTagName());
+        else ret.setListName(listName);
+
+        try
+        {
+            NodeList nodeList = (NodeList) xpath.compile(xpathElementExpression).evaluate(
+                    doc, XPathConstants.NODESET);
+
+            NameMapper nameMapper = null;
+            for(int x = 0; x < nodeList.getLength(); x++)
+            {
+                Node matchedNode = nodeList.item(x);
+
+
+                List<Element> elements = getChildElements(matchedNode);
+
+                // there is only one rowmapper per elementList
+                if (nameMapper == null) nameMapper = getNameMapper(elements);
+                else nameMapper.addColumns(getColumnNames(elements), Element.class);
+
+                DataMapper row = XmlUtilities.convertToRow(nameMapper, matchedNode, null);
+                XmlUtilities.addAttributes(row, matchedNode, "2");
+                ret.add(row);
+            }
+
+        } catch (XPathExpressionException e) {
+            throw new RuntimeException(e);
+        }
+
+        return ret;
+    }
+
+    public static NameMapper getNameMapper(Document doc, String xpathElementExpression)
+    {
+
+        XPathFactory xpathfactory = XPathFactory.newInstance();
+        XPath xpath = xpathfactory.newXPath();
+
+        try
+        {
+            NodeList nodeList = (NodeList) xpath.compile(xpathElementExpression).evaluate(
+                    doc, XPathConstants.NODESET);
+
+            NameMapper nameMapper = null;
+            for(int x = 0; x < nodeList.getLength(); x++)
+            {
+                Node parent = nodeList.item(x);
+                List<Element> elements = getChildElements(parent);
+
+                // there is only one rowmapper per elementList
+                if (nameMapper == null) nameMapper = getNameMapper(elements);
+                else nameMapper.addColumns(getColumnNames(elements), Element.class);
+            }
+
+            return nameMapper;
+        } catch (XPathExpressionException e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+
+    public static List<String> getAllTextNodes(Node node) {
+        List<String> text = new ArrayList<>();
+
+        NodeList nodeList = node.getChildNodes();
+        if (nodeList.getLength() == 0) return text;
+
+        for (int x = 0; x < nodeList.getLength(); x++) {
+            Node textNode = nodeList.item(x);
+            if ((textNode instanceof Text) || (textNode instanceof CDATASection)) {
+                text.add(textNode.getTextContent());
+            }
+        }
+
+        return text;
+    }
+
+    public static void addSimpleTag(DataMapper dataMapper, Node node, boolean useNodeNameAsColName, String prefix) {
+        List<String> str = getAllTextNodes(node);
+        str = str.stream()
+                .filter(s -> s != null && s.trim().length() > 0)
+                .filter(s -> StringUtilities.trimWhitespace(s).length() > 0)
+                .collect(Collectors.toList());
+
+        if (str.size() > 0) {
+            String colName = "#text";
+            if (useNodeNameAsColName) colName = node.getNodeName();
+            if (isDebugEnabled()) colName = prefix + "." + colName;
+            if (node instanceof Element)
+            {
+                dataMapper.addColumn(colName, Element.class);
+                dataMapper.set(colName, node);
+            }
+            else {
+                dataMapper.addColumn(colName, String.class);
+                dataMapper.set(colName, str.stream().collect(Collectors.joining("")));
+            }
+        }
+
+    }
+
+    public static boolean elementHasChildren(Element elem) {
+        List<Element> childElements = getChildElements(elem);
+
+        return childElements.size() > 0;
+    }
+
+    public static boolean isSingleElement(Node node)
+    {
+        boolean ret = true;
+
+        if (!(node instanceof Element)) return false;
+
+        Element elem = (Element)node;
+        Node parentNode = elem.getParentNode();
+        if (parentNode != null) {
+            List<Element> siblingTags = getChildElements(parentNode);
+
+            long cnt = siblingTags.stream().filter(n -> n.getTagName().equals(elem.getTagName())).count();
+            if (cnt > 1) ret = false;
+        }
+
+        return ret;
+    }
+
+    public static void addChildTags(DataMapper row, Node node) {
+        List<Element> childElements = getChildElements(node);
+
+        for(Element tag : childElements)
+        {
+            List<Element> childChildElements = getChildElements(tag);
+            if (childChildElements.size() > 0) {
+                NameMapper nameMapper = new NameMapper(getColumnNames(childChildElements), Element.class);
+                DataMapper childRow = convertToRow(nameMapper, tag, row);
+
+                DataMapperList tagList = row.getDataMapperList(tag.getTagName());
+                if (tagList == null) {
+                    tagList = new DataMapperList();
+                    tagList.setListName(tag.getTagName());
+                }
+                tagList.add(childRow);
+                row.set(tag.getTagName(), tagList);
+                row.set_data_class(tag.getTagName(), DataMapperList.class);
+            }
+            else {
+                if (isSingleElement(tag)) {
+                    NameMapper nameMapper = row.getNameMapper();
+                    nameMapper.addColumn(tag.getTagName(), Element.class);
+                    addAttributes(row, tag, "6");
+                    addSimpleTag(row, tag, true, "6");
+                }
+                else {
+                    String colName = tag.getTagName();
+
+                    NameMapper childNameMapper = new NameMapper();
+                    DataMapper childRow = convertToRow(childNameMapper, tag, row);
+
+                    DataMapperList tagList = row.getDataMapperList(colName);
+                    if (tagList == null) {
+                        tagList = new DataMapperList();
+                        tagList.setListName(colName);
+                    }
+                    tagList.add(childRow);
+                    row.set(colName, tagList);
+                    row.set_data_class(colName, DataMapperList.class);
+                }
+            }
+        }
+
+
+    }
+
+    public static String getTagPathString(Node node) {
+        Stack<Node> pathStack = new Stack<Node>();
+        pathStack.add(node);
+        getTagPathString(node, pathStack);
+
+        StringBuilder builder = new StringBuilder();
+        while(pathStack.size() > 0) builder.append("/"+pathStack.pop().getNodeName());
+
+        return builder.toString();
+    }
+
+    public static void getTagPathString(Node node, Stack<Node> pathStack) {
+        if (node.getParentNode() != null) {
+            pathStack.push(node.getParentNode());
+            getTagPathString(node.getParentNode(), pathStack );
+        }
+    }
+
+    public static List<String> getColumnNames(List<Element> elements)
+    {
+        return elements.stream().map(e -> e.getTagName()).distinct().collect(Collectors.toList());
+    }
+    public static NameMapper getNameMapper(List<Element> rowElement)
+    {
+        return new NameMapper(getColumnNames(rowElement), Element.class);
+    }
+
+    public static String getStringValue(Node node)
+    {
+        return getStringValue(node, true);
+    }
+
+    public static String getStringValue(Node node, boolean trimWhitespace)
+    {
+        if (node == null) return null;
+
+        switch (node.getNodeType()) {
+            case Node.ELEMENT_NODE:
+                if (trimWhitespace) return StringUtilities.trimWhitespace(node.getTextContent());
+                else return node.getTextContent();
+            case Node.ATTRIBUTE_NODE:
+                if (trimWhitespace) return StringUtilities.trimWhitespace(node.getNodeValue());
+                else return node.getNodeValue();
+            default:
+                throw new RuntimeException("Unknown node type for " + node.toString());
+        }
+    }
+
+    public static DataMapperList convertDocumentToRows(Document doc)
+    {
+        List<Element> elements = getChildElements(doc);
+
+        NameMapper nameMapperNext = getNameMapper(elements);
+
+        DataMapperList ret = new DataMapperList();
+        ret.setListName(doc.getDocumentElement().getTagName());
+
+        ret.add(XmlUtilities.convertToRow(nameMapperNext, doc, null));
+
+        return ret;
+    }
+
+    public static DataMapperList loadDataFromResource(String resourceAsStream)
+    {
+        InputStream is = XmlUtilities.class.getResourceAsStream(resourceAsStream);
+        if (is == null) throw new RuntimeException(resourceAsStream + " not found!");
+        return convertDocumentToRows(XmlUtilities.loadDocumentFromInputStream(is));
+    }
+
+    public static DataMapperList loadDataFromResource(InputStream inputStream)
+    {
+        return convertDocumentToRows(XmlUtilities.loadDocumentFromInputStream(inputStream));
+    }
+
+    public static DataMapperList loadDataFromResource(String resourceAsStream, ClassLoader classLoader)
+    {
+        InputStream is = classLoader.getResourceAsStream(resourceAsStream);
+        if (is == null) throw new RuntimeException(resourceAsStream + " not found!");
+        return convertDocumentToRows(XmlUtilities.loadDocumentFromInputStream(is));
+    }
+
+    public static Document loadDocumentFromResource(String resourceAsStream, ClassLoader classLoader)
+    {
+        InputStream is = classLoader.getResourceAsStream(resourceAsStream);
+        if (is == null) throw new RuntimeException(resourceAsStream + " not found!");
+
+        return XmlUtilities.loadDocumentFromInputStream(is, classLoader, resourceAsStream, true);
+    }
+
+    public static Document loadDocumentFromResource(String resourceAsStream)
+    {
+        InputStream is = XmlUtilities.class.getResourceAsStream(resourceAsStream);
+        if (is == null) throw new RuntimeException(resourceAsStream + " not found!");
+        return XmlUtilities.loadDocumentFromInputStream(is);
+    }
+
+    public static void removeAllChildren(Node node)
+    {
+        if (node == null) return;
+        NodeList childNodes = node.getChildNodes();
+        for(int i = 0; i< childNodes.getLength(); i++) {
+            node.removeChild(childNodes.item(i));
+        }
+    }
+}
