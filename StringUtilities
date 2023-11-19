@@ -1,0 +1,681 @@
+
+@Slf4j
+public final class StringUtilities {
+
+    /** Static methods utility class. */
+    private StringUtilities() { }
+
+    public static String readResource(String resourceName) {
+        return readResource(resourceName, null);
+    }
+
+    public static String readResource(String resourceName, ClassLoader classLoader)
+    {
+        try {
+            if (classLoader != null) {
+                URL url = classLoader.getResource(resourceName);
+                if (url == null) throw new RuntimeException("Unable to read resource " + resourceName);
+                return Files.readString(Path.of(url.toURI()));
+            }
+            else {
+                URL url = StringUtilities.class.getResource(resourceName);
+                if (url != null) Files.readString(Path.of(url.toURI()));
+
+                File file = new File(resourceName);
+                if (!file.exists()) throw new RuntimeException("Unable to read resource " + resourceName);
+                return Files.readString(Path.of(file.toURI()));
+            }
+
+        }
+        catch(IOException | URISyntaxException ex) {
+            throw new RuntimeException("Unable to read resource " + resourceName);
+        }
+    }
+
+    private static Pattern pathVariablePattern = Pattern.compile("\\{[A-Za-z_][\\w|\\.]*\\$?\\}");
+
+    public static String hintString(String fullString, int keepStartLen, int keepEndLen) {
+        if (fullString == null || fullString.trim().length()==0) return null;
+        fullString = fullString.trim();
+        if (fullString.length() <= keepStartLen + keepEndLen) {
+            log.warn("String length to make the hint for is to short for keep length. Returning null.");
+            return null;
+        }
+
+        return fullString.substring(0, keepStartLen) + " ... " + fullString.substring(fullString.length()-keepEndLen);
+    }
+
+    public static List<String> getVariableNames(final String urlPattern) {
+        Matcher matcher = pathVariablePattern.matcher(urlPattern);
+        String result = urlPattern.replaceAll("/", "\\\\/");
+        List<String> variableNames = new ArrayList<>();
+        while (matcher.find()) {
+            String variable = matcher.group();
+            variableNames.add(variable.substring(1, variable.length() - 1));// get rid of {}
+
+        }
+        return variableNames;
+    }
+
+    public static boolean isEmpty(String toCheck) {
+        return toCheck == null || toCheck.trim().length() == 0;
+    }
+
+    public static String renameJsUncompatible(String key) {
+        if (key.indexOf('-') > -1) {
+            key = key.replaceAll("-", "_");
+        }
+        if (key.indexOf('.') > -1) {
+            key = key.replaceAll("\\.", "_");
+        }
+        return key;
+    }
+    public static String removeAllSqlComments(String txt)
+    {
+        if (txt == null) return null;
+        System.err.println();
+        System.err.println(txt);
+        // java/c comments txt = txt.replaceAll("(?:/\\*(?:[^*]|(?:\\*+[^*/]))*\\*+/)|(?://.*)", "");
+        txt = txt.replaceAll("(?:/\\*(?:[^*]|(?:\\*+[^*/]))*\\*+/)|(?://.*)", "");
+        return StringUtilities.trimWhitespace(txt);
+    }
+
+    public static String removeAllSqlPlaceholders(String txt)
+    {
+        if (txt == null) return null;
+        txt = replaceSqlPlaceholder( txt, "([^ \t]*\\&\\&*[a-z0-9A-Z]+[\\. \t\r\n$]*)", "", true).trim();
+        txt = replaceSqlPlaceholder(txt, "[a-z0-9A-Z]+", "", false).trim();
+        return StringUtilities.trimWhitespace(txt);
+    }
+
+
+    public static String replaceSqlPlaceholder(String txt, String searchString, String replacement) {
+        return replaceSqlPlaceholder(txt, searchString, replacement, false);
+    }
+
+    public static String replaceSqlPlaceholder(String txt, String searchString, String replacement, boolean fullSearchString)
+    {
+        if (txt == null) return null;
+        if (replacement == null) replacement = "";
+        Pattern pattern = null;
+        if (!fullSearchString) pattern = Pattern.compile("(\\&\\&*"+searchString+"[\\. \t\r\n$]?)", Pattern.CASE_INSENSITIVE);
+        else pattern = Pattern.compile(searchString, Pattern.CASE_INSENSITIVE);
+
+        Matcher m = pattern.matcher(txt);
+        String ret = txt;
+
+        if (m.find()) ret = m.replaceAll(replacement);
+
+        return StringUtilities.trimWhitespace(ret);
+    }
+
+    public static String replaceCamelCases(String txt, String replacement)
+    {
+        String ret = txt;
+        ret = StringUtilities.inBetweenLeftRightSide(ret, "[a-z]", "[A-Z0-9]+", replacement);
+        //	ret = StringUtilities.inBetweenLeftRightSide(ret, "[A-Z]", "[a-z0-9]+", replacement);
+
+        return ret;
+    }
+
+    public static String inBetweenLeftRightSide(String txt, String leftSideReg, String rightSideReg, String replacement)
+    {
+        if (txt == null) return null;
+        Pattern pattern = null;
+        pattern = Pattern.compile("(?<ls>"+leftSideReg+")(?<rs>"+rightSideReg+")");
+
+        Matcher m = pattern.matcher(txt);
+        StringBuilder sb = new StringBuilder();
+
+        while (m.find())  sb.append(m.replaceAll("${ls}"+replacement+"${rs}"));
+
+
+        return (sb.length() > 0 ? sb.toString() : txt);
+    }
+
+    public static boolean existsSqlPlaceholder(String txt, String searchString)
+    {
+        if (txt == null) return false;
+        Pattern pattern = Pattern.compile("(\\&\\&*"+searchString+"[\\. \t\r\n$]?)", Pattern.CASE_INSENSITIVE);
+
+        Matcher m = pattern.matcher(txt);
+
+        return m.find();
+    }
+
+    public static String trimWhitespace(String s)
+    {
+        if (s==null) return null;
+
+        return s.replaceAll("^\\s+", "").replaceAll("\\s+$", "");
+    }
+
+    public static String removeWhitespace(String s)
+    {
+        return (s==null ? null : s.replaceAll("\\s", ""));
+    }
+
+    public static String removeString(String s, String str)
+    {
+        return (s==null ? null : s.replaceAll(str, ""));
+    }
+
+    public static String clobToString(Clob data) {
+        return clobToString(data, null);
+    }
+
+    private static Random random = new Random();
+    public static String randomString(int size) {
+        return randomString(size, null);
+    }
+    public static String randomString(int size, String excludeChars) {
+
+        synchronized (random) {
+            return random.ints('0', 'z' + 1)
+                    .filter(i -> (i <= 57 || i >= 65) && (i <= 90 || i >= 97))
+                    .filter(i -> excludeChars == null || excludeChars.indexOf(i) < 0 )
+                    .limit(size)
+                    .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                    .toString();
+        }
+    }
+
+    public static String htmlEscapeSpaceAndNewLines(String line)
+    {
+        if (line == null) return null;
+        line = line.replaceAll("\\s", "&nbsp;");
+        line = line.replaceAll("\n", "<br/>");
+        return line;
+    }
+
+    public static String replacePerLine(String bigStringWithNewLines, Function<String, String> lineReplacer) {
+        if (bigStringWithNewLines == null) return null;
+        StringBuilder sb = new StringBuilder();
+        try {
+            Reader r = new StringReader(bigStringWithNewLines);
+            BufferedReader br = new BufferedReader(r);
+
+            String line;
+            while(null != (line = br.readLine())) {
+                if (lineReplacer != null) sb.append(lineReplacer.apply(line));
+                else sb.append(line);
+            }
+            br.close();
+        } catch (IOException e ) {
+            log.error(e.getMessage(), e);
+            return null;
+        }
+        return sb.toString();
+    }
+
+    public static String readerToString(Reader reader, Function<String, String> lineReplacer) {
+        if (reader == null) return null;
+        StringBuilder sb = new StringBuilder();
+        try {
+            BufferedReader br = new BufferedReader(reader);
+
+            String line;
+            while(null != (line = br.readLine())) {
+                if (lineReplacer != null) sb.append(lineReplacer.apply(line));
+                else sb.append(line);
+            }
+
+        } catch ( IOException e ) {
+            log.error(e.getMessage(), e);
+            return null;
+        }
+        return sb.toString();
+    }
+    public static String clobToString(Clob data, Function<String, String> lineReplacer) {
+        if (data == null) return null;
+        StringBuilder sb = new StringBuilder();
+        try {
+            Reader reader = data.getCharacterStream();
+            BufferedReader br = new BufferedReader(reader);
+
+            String line;
+            while(null != (line = br.readLine())) {
+                if (lineReplacer != null) sb.append(lineReplacer.apply(line));
+                else sb.append(line);
+            }
+            br.close();
+        } catch (SQLException | IOException e ) {
+            log.error(e.getMessage(), e);
+            return null;
+        }
+        return sb.toString();
+    }
+
+    public static List<String> split(String s, String delim) {
+        return split(s, delim, true, true);
+    }
+
+    public static List<String> split(String s, String delim, boolean skipEmpty, boolean trimEntries)
+    {
+        List<String> ret = new ArrayList<>();
+
+        if (s == null) return ret;
+
+        if (s.indexOf(delim) < 0) { ret.add(s); return ret; }
+
+        int nextMatchPos = s.indexOf(delim);
+        int lastMatchedPos = 0;
+        while (nextMatchPos > -1) {
+            String am = s.substring(lastMatchedPos, nextMatchPos);
+            if (am != null) {
+                if ( (am.trim().length() == 0) && skipEmpty) continue;
+                if (trimEntries) ret.add(am.trim());
+                else ret.add(am);
+            }
+
+            lastMatchedPos = nextMatchPos + delim.length();
+            nextMatchPos = s.indexOf(delim, lastMatchedPos);
+            if ( nextMatchPos == -1) {
+                String lm = s.substring(lastMatchedPos);
+                if (lm != null) {
+                    if ( (lm.trim().length() == 0) && skipEmpty) continue;
+                    if (trimEntries) ret.add(lm.trim());
+                    else ret.add(lm);
+                }
+            }
+        }
+
+        return ret;
+    }
+
+    public static String toString(Object o) {
+        return toString(o, null);
+    }
+
+    public static String toString(Object o, String datePatternIfDate)
+    {
+        if (o == null) return null;
+        Class cls = o.getClass();
+        if (Number.class.isAssignableFrom(cls)) {
+            return String.valueOf((Number)o);
+        }
+        if (Date.class.isAssignableFrom(cls)) {
+            return DateUtilities.asFormattedDate((Date)o, datePatternIfDate==null?"dd.MM.yyyy":datePatternIfDate);
+        }
+        if (LocalDate.class.isAssignableFrom(cls)) {
+            return DateUtilities.asFormattedDate((LocalDate)o, datePatternIfDate==null?"dd.MM.yyyy":datePatternIfDate);
+        }
+        if (LocalDateTime.class.isAssignableFrom(cls)) {
+            return DateUtilities.asFormattedDate((LocalDateTime)o, datePatternIfDate==null?"dd.MM.yyyy HH:mm:ss":datePatternIfDate);
+        }
+        if (Enum.class.isAssignableFrom(cls)) {
+            return ((Enum)o).name();
+        }
+        if (String.class.isAssignableFrom(cls)) {
+            return (String)o;
+        }
+        if (Boolean.class.isAssignableFrom(cls)) {
+            return BooleanUtilities.asString((Boolean)o);
+        }
+        if (Node.class.isAssignableFrom(cls)) {
+            return XmlUtilities.getStringValue((Node)o, false);
+        }
+        log.debug("Converting unknown data type " + cls.getSimpleName() + " to string using toString()");
+
+        return o.toString();
+    }
+
+
+
+/*
+    public static String replaceVars(Map<String, String> smap, String pattern)
+    {
+        StringSubstitutor ss = new StringSubstitutor(smap);
+        pattern = StringUtils.replace(pattern, "{", "${");
+        return ss.replace(pattern);
+    }
+*/
+
+    public static List<String> reduceList(List<String> bigList, String delimiter, int groupByCount)
+    {
+        return reduceList(bigList, delimiter, groupByCount, false);
+    }
+
+    public static List<String> reduceList(List<String> bigList, String delimiter, int groupByCount, boolean withEndOfSentence)
+    {
+        if (groupByCount <= 0) return bigList;
+        List<String> ret = new ArrayList<>();
+        List<String> elemList = new ArrayList<>();
+        for(String elem : bigList) {
+            if (elemList.size() < groupByCount) {
+                elemList.add(elem);
+
+                if (withEndOfSentence) {
+                    if (elem.trim().endsWith(".") || elem.trim().endsWith(":") || elem.trim().endsWith("!") || elem.trim().endsWith("?")) {
+                        ret.add(elemList.stream().collect(Collectors.joining(delimiter)));
+                        elemList.clear();
+                    }
+                }
+                continue;
+            }
+
+            elemList.add(elem);
+            ret.add(elemList.stream().collect(Collectors.joining(delimiter)));
+            elemList.clear();
+        }
+
+        if (elemList.size() > 0) ret.add(elemList.stream().collect(Collectors.joining(delimiter)));
+
+        return ret;
+    }
+
+    public static List<String> maxElementsList(List<String> bigList, String delimiter, int maxElementCount, boolean withEndOfSentence)
+    {
+        if (maxElementCount <= 0) return bigList;
+        int x = bigList.size() / maxElementCount;
+        if (x == 0) x = maxElementCount;
+
+        return reduceList(bigList, delimiter, x, withEndOfSentence);
+    }
+    public static List<String> maxElementsList(List<String> bigList, String delimiter, int maxElementCount)
+    {
+        return maxElementsList(bigList,delimiter,maxElementCount, false);
+    }
+
+    public static List<String> splitOnCapitalLetter(String inputString)
+    {
+        Pattern p = Pattern.compile("(?<=.)(?=(\\p{Upper}))");
+
+        String[] s1 = p.split(inputString);
+
+        return Arrays.asList(s1);
+
+    }
+
+    public static String join(List<String> strs, int first, int last, boolean firstLetterIsSmallCase)
+    {
+        if (first >= strs.size()) return null;
+
+        String ret = strs.get(first);
+        if (firstLetterIsSmallCase) ret = ret.substring(0,1).toLowerCase()+ret.substring(1);
+
+        for (int x = 0; x <= last; x++)
+        {
+            if (x > first && x <= last) ret = ret + strs.get(x);
+        }
+
+        return ret;
+    }
+
+    public static String replace(String str, int first, int last, String replace)
+    {
+        return str.substring(0, first) + replace + str.substring(last);
+    }
+
+    public static String join(List<String> strs, int first)
+    {
+        return StringUtilities.join(strs, first, strs.size()-1, true);
+    }
+
+    public static String nonPrefixed(String inputString)
+    {
+        return StringUtilities.join(StringUtilities.splitOnCapitalLetter(inputString), 1 );
+    }
+
+    public static String prefix(String inputString)
+    {
+        return StringUtilities.join(StringUtilities.splitOnCapitalLetter(inputString), 0, 0, true );
+    }
+
+    public static String format(String msg, Object ... args)
+    {
+        int x = 0;
+        while(msg.contains("{}")) {
+            msg = msg.replaceFirst(Pattern.quote("{}"), "{"+ x++ +"}");
+        }
+
+        return MessageFormat.format(msg, args);
+    }
+
+    private static final Object[] EMPTY_MESSAGE_PARAMETERS = new Object[0];
+    public static String format(String msg, Locale locale, Object ... args)
+    {
+        int x = 0;
+        while(msg.contains("{}")) {
+            msg = msg.replaceFirst(Pattern.quote("{}"), "{"+ x++ +"}");
+        }
+
+        final MessageFormat messageFormat = new MessageFormat(msg, locale);
+
+        return messageFormat.format(( args != null && args.length > 0 ? args : EMPTY_MESSAGE_PARAMETERS));
+    }
+
+    public static String listToString(List list)
+    {
+        return listToString(list, false, false);
+    }
+    public static String listToString(List list, boolean sort, boolean removeNulls)
+    {
+        if (list == null) return null;
+        List<String> stringElem = new ArrayList<>();
+        for(Object e : list) {
+            if (e == null) { stringElem.add("null"); continue; }
+            if (e == null && removeNulls) continue;
+
+            stringElem.add(toString(e));
+        }
+
+        return stringElem.toString();
+    }
+
+    public static String arrayToString(Object[] sa)
+    {
+        if (sa == null) return null;
+
+        return listToString(Arrays.asList(sa));
+    }
+    public static String arrayToString(Object[] sa, boolean sort, boolean removeNulls)
+    {
+        if (sa == null) return null;
+
+        return listToString(Arrays.asList(sa, sort, removeNulls));
+    }
+
+    public static List<String> enu2list(Enumeration enu, boolean sort, boolean removeNulls)
+    {
+        if (enu == null) return null;
+        List<String> stringElem = new ArrayList<>();
+        while(enu.hasMoreElements())
+        {
+            Object e = enu.nextElement();
+            if (e == null && removeNulls) continue;
+            if (e == null) { stringElem.add("null"); continue; }
+
+            if (e instanceof Enum) stringElem.add(EnumUtilities.enumName((Enum)e));
+            else if (e instanceof Node) stringElem.add(XmlUtilities.getStringValue((Node)e, false));
+            else if (e instanceof List) stringElem.add(StringUtilities.listToString((List)e));
+            else stringElem.add((e instanceof String ? (String)e : String.valueOf(e)));
+        }
+
+        if (sort) stringElem = stringElem.stream().filter(s->s!=null).sorted().toList();
+
+        return stringElem;
+    }
+
+    public static String enu2string(Enumeration enu, boolean sort, boolean removeNulls)
+    {
+        return enu2list(enu, sort, removeNulls).toString();
+    }
+
+    public static String lpad(String src, int lvl)
+    {
+        return lpad(src, lvl, "  ");
+    }
+
+    public static String lpad(String src, int lvl, String ident) {
+        StringBuilder builder = new StringBuilder();
+
+        for(int x = 0; x < lvl; x++) builder.append(ident);
+
+        builder.append(src);
+
+        return builder.toString();
+    }
+
+    public static void titleize(final List<String> ret, final String s, int l1, int l2) {
+        String sr = bound.splitAsStream(s)
+                .filter(input -> input != null && input.length() > 0)
+                .map(input -> getULN(input.substring(0,  1),l1) + getULN(input.substring(1),l2))
+                .collect(Collectors.joining());
+
+        ret.add(sr);
+    }
+
+    public static String getULN(final String s, int ulnOption) {
+        switch(ulnOption) {
+            case 1:
+                return s.toUpperCase();
+            case 2:
+                return s.toLowerCase();
+            default:
+                return s;
+        }
+    }
+
+    public static List<String> camelCaseLU(final List<String> ret, final String txt, final String replacement) {
+        Matcher m  = camelCaseLU.matcher(txt);
+        StringBuilder sr = new StringBuilder();
+
+        while(m.find()) sr.append(m.replaceAll("${ls}"+replacement+"${rs}"));
+
+        if (sr.length() > 0) {
+            ret.add(sr.toString());
+            ret.add(sr.toString().toLowerCase());
+            ret.add(sr.toString().toUpperCase());
+        }
+
+        return ret;
+    }
+    private static final Pattern camelCaseLU = Pattern.compile("(?<ls>[a-z])(?<rs>[A-Z\\d]+)");
+    private static final Pattern camelCaseUL = Pattern.compile("(?<ls>[A-Z])(?<rs>[a-z\\d]+)");
+    private static final Pattern bound = Pattern.compile("\\b|[_=;:#\"](?=[a-zA-Z\\d])");
+
+    public static List<String> generateSynonyms(String name) {
+
+        List<String> ss = new ArrayList<>();
+        ss.add(name);
+        
+        titleize(ss,  name, 1,0);
+        titleize(ss,  name, 2,0);
+        titleize(ss,  name, 1,2);
+        titleize(ss,  name, 2,1);
+        propname(ss,  name, 1,0);
+        propname(ss,  name, 2,0);
+        propname(ss,  name, 1,2);
+        propname(ss,  name, 2,2);
+
+        camelCaseLU(ss, name, "_");
+
+        ss.add(renameJsUncompatible(name));
+
+        ss.add(name.toLowerCase());
+        ss.add(name.toUpperCase());
+
+        return ss.stream().distinct().collect(Collectors.toList());
+    }
+    public static String propname(final String s, int l1, int l2) {
+        String[] sa = bound.split(s);
+        StringBuilder sb = new StringBuilder();
+        sb.append(sa[0].toLowerCase());
+        for (int x =1; x < sa.length; x++ ) {
+            if (sa[x] == null) continue;
+            if (sa[x].length() == 0) continue;
+            sb.append(getULN(sa[x].substring(0,  1), l1) + (sa[x].length() > 0 ? getULN(sa[x].substring(1), l2) : ""));
+        }
+        return sb.toString();
+    }
+
+    public static void propname(final List<String> ret, final String s, int l1, int l2) {
+        String sr = propname(s, l1, l2);
+        ret.add(sr);
+    }
+
+    public static String endWith(String txt, String suffix) {
+        if (txt == null) return null;
+        if (suffix == null) return txt;
+
+        txt = txt.trim();
+
+        if (txt.endsWith(suffix)) return txt;
+
+        return txt + suffix;
+    }
+
+    public static String startWith(String txt, String prefix) {
+        if (txt == null) return null;
+        if (prefix == null) return txt;
+
+        txt = txt.trim();
+
+        if (txt.startsWith(prefix)) return txt;
+
+        return prefix+txt;
+    }
+
+    public static String removeAtEnd(String txt, String suffix) {
+        if (txt == null) return null;
+        if (suffix == null) return txt;
+
+        txt = txt.trim();
+
+        if (txt.endsWith(suffix)) return txt.replaceAll(".+"+suffix+"$", "");
+
+        return txt;
+    }
+
+    public static String removeAtStart(String txt, String prefix) {
+        if (txt == null) return null;
+        if (prefix == null) return txt;
+
+        txt = txt.trim();
+
+        if (txt.startsWith(prefix)) return txt.replaceAll("^"+prefix+".+", "");
+
+        return txt;
+    }
+
+
+    public static List<String> coll2list(AbstractCollection enu, boolean sort, boolean removeNulls)
+    {
+        if (enu == null) return null;
+        List<String> stringElem = new ArrayList<>();
+        for(Object e : enu)
+        {
+            if (e == null && removeNulls) continue;
+            if (e == null) { stringElem.add("null"); continue; }
+
+            stringElem.add(toString(e));
+        }
+
+        if (sort) stringElem = stringElem.stream().filter(s->s!=null).sorted().toList();
+
+        return stringElem;
+    }
+
+    public static String coll2string(AbstractCollection e)
+    {
+        String ret = null;
+        if (e == null) return null;
+
+        Iterator i = e.iterator();
+
+        while(i.hasNext())
+        {
+            Object aname   = i.next();
+            String s = null;
+
+            if (aname instanceof String) s = (String)aname;
+            else s = aname.toString();
+
+            ret = (ret == null ? s : ret + "," + s);
+        }
+
+        return ret;
+    }
+
+}
